@@ -15,3 +15,8 @@ define('DB_PASS', '');
 
 // ---- Uploaded photos ----
 define('UPLOAD_DIR', __DIR__ . '/public/uploads/reports/');
+
+// ---- Image description (Hugging Face Inference Providers) ----
+// Free tier, no billing card required. Create a token at
+// https://huggingface.co/settings/tokens (read scope is enough).
+define('HF_API_TOKEN', getenv('HF_API_TOKEN') ?: '');
