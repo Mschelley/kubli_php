@@ -4,7 +4,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>KUBLI Prototype — Sign in</title>
+<title>KUBLI — Sign in</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
@@ -26,23 +26,23 @@
         <button type="button" class="auth-tab" id="tab-signup" data-mode="signup">Create account</button>
       </div>
 
-      <p class="login-sub" id="auth-sub">Already have an account? Sign in. New to KUBLI? Create a citizen account first.</p>
+      <p class="login-sub" id="auth-sub">Sign in to your KUBLI account.</p>
 
       <div id="signup-only" hidden>
         <label for="li-name">Full name</label>
-        <input type="text" id="li-name" placeholder="e.g. Rechelle Jane" autocomplete="name">
+        <input type="text" id="li-name" autocomplete="name">
       </div>
 
       <label for="li-email">Email address</label>
-      <input type="email" id="li-email" placeholder="name@example.com" autocomplete="username">
+      <input type="email" id="li-email" autocomplete="username">
 
       <label for="li-password">Password</label>
-      <input type="password" id="li-password" placeholder="••••••••" autocomplete="current-password">
+      <input type="password" id="li-password" autocomplete="current-password">
 
       <div id="signup-pass2" hidden>
         <label for="li-password2">Confirm password</label>
-        <input type="password" id="li-password2" placeholder="••••••••" autocomplete="new-password">
-        <p class="hint">New accounts start as Citizen — a Manager can adjust your role later.</p>
+        <input type="password" id="li-password2" autocomplete="new-password">
+        <p class="hint">New accounts start as Citizen.</p>
       </div>
 
       <div class="btn-row" style="margin-top:20px;">
@@ -52,7 +52,6 @@
       <p class="hint" style="text-align:center;margin-top:12px;">
         <button type="button" class="text-link" id="switch-auth">Don't have an account yet? Create one</button>
       </p>
-     
     </div>
 </div>
 
@@ -93,7 +92,7 @@
       <div>
         <span class="eyebrow">System overview</span>
         <h2>CENRO Manolo Fortich — hazard &amp; permit overview</h2>
-        <p>Live snapshot of everything reported through KUBLI: risk mix, processing status, and where hazards are concentrated.</p>
+        <p>Live snapshot of reported hazards, processing status, and locations.</p>
       </div>
     </div>
 
@@ -127,7 +126,6 @@
       <div>
         <span class="eyebrow">Citizen reporting</span>
         <h2>Report a hazardous tree</h2>
-        <p>Snap a photo, drop a pin, describe what you see. KUBLI classifies the risk instantly and routes it to the right office.</p>
       </div>
     </div>
 
@@ -135,7 +133,7 @@
       <div class="card">
         <h3>New field report</h3>
 
-        <label>Photo evidence — live camera</label>
+        <label>Photo evidence</label>
         <div class="camera-booth">
           <div class="viewfinder">
             <span class="vf-corner tl"></span>
@@ -153,16 +151,18 @@
             <button type="button" class="btn btn-outline btn-sm" id="cam-retake" disabled>Retake</button>
             <label class="btn btn-outline btn-sm cam-upload">Upload<input type="file" id="cam-file" accept="image/*" capture="environment" hidden></label>
           </div>
-          <p class="hint">Your browser will ask for camera permission when this tab opens. On a phone you can also upload from the gallery.</p>
         </div>
 
-        <label for="u-desc">Description</label>
-        <textarea id="u-desc" placeholder="What does the tree look like? Any recent storm damage, leaning, or exposed roots?"></textarea>
+        <div class="label-row">
+          <label for="u-desc">Description</label>
+          <span class="ai-status" id="u-ai-status"></span>
+        </div>
+        <textarea id="u-desc"></textarea>
 
         <div class="field-row">
           <div>
-            <label for="u-species">Tree / species (if known)</label>
-            <input type="text" id="u-species" placeholder="e.g. Narra, Acacia, unidentified">
+            <label for="u-species">Tree / species</label>
+            <input type="text" id="u-species">
           </div>
           <div>
             <label for="u-context">Location context</label>
@@ -183,7 +183,8 @@
         <div id="u-map" class="location-map" aria-label="Choose tree location on map"></div>
 
         <fieldset style="margin-top:16px;">
-          <legend>Observed condition (select all that apply)</legend>
+          <legend>Observed condition</legend>
+          <div class="check-row check-all"><input type="checkbox" id="u-all-conditions"><span><b>All</b></span></div>
           <div class="check-row"><input type="checkbox" data-lvl="1" value="dead_branches"><span><span class="lvl-tag lvl1">L1</span>Small dead branches or minor leaf discoloration</span></div>
           <div class="check-row"><input type="checkbox" data-lvl="2" value="cracks"><span><span class="lvl-tag lvl2">L2</span>Visible cracks or minor lean</span></div>
           <div class="check-row"><input type="checkbox" data-lvl="2" value="canopy_dieback"><span><span class="lvl-tag lvl2">L2</span>Partial canopy dieback</span></div>
@@ -218,7 +219,7 @@
       <div>
         <span class="eyebrow">System oversight</span>
         <h2>Reports log</h2>
-        <p>Full record of every hazard report submitted through KUBLI, for oversight — not day-to-day case handling.</p>
+        <p>Full record of hazard reports submitted through KUBLI.</p>
       </div>
     </div>
 
@@ -228,7 +229,7 @@
         <button class="btn btn-outline btn-sm" id="log-export">Export CSV</button>
       </div>
       <table>
-        <thead><tr><th>Timestamp</th><th>Risk Level</th><th>Location</th><th>Status</th></tr></thead>
+        <thead><tr><th>Timestamp</th><th>Risk Level</th><th>Location</th><th>Status</th><th>Action</th></tr></thead>
         <tbody id="log-table"></tbody>
       </table>
     </div>
@@ -239,7 +240,7 @@
       <div>
         <span class="eyebrow">Barangay / DENR officer</span>
         <h2>Report queue &amp; permit routing</h2>
-        <p>Sorted by risk. Assign field validation, classify the permit scope, and move each case through to resolution.</p>
+        <p>Review reports by risk, validate cases, and assign permit scope.</p>
       </div>
     </div>
 
@@ -260,6 +261,7 @@
         <option value="Permit Routed">Permit Routed</option>
         <option value="Resolved">Resolved</option>
       </select>
+      <button class="btn btn-outline btn-sm" id="mgr-print">Print PDF</button>
     </div>
 
     <div id="mgr-list"></div>
@@ -270,7 +272,7 @@
       <div>
         <span class="eyebrow">Account management</span>
         <h2>User accounts</h2>
-        <p>Approve new citizen and staff accounts, adjust roles, and remove inactive users.</p>
+        <p>Manage citizen and staff accounts.</p>
       </div>
     </div>
 
@@ -278,9 +280,9 @@
       <div class="card">
         <h3>Add account</h3>
         <label for="a-name">Full name</label>
-        <input type="text" id="a-name" placeholder="Juan Dela Cruz">
+        <input type="text" id="a-name">
         <label for="a-email">Email address</label>
-        <input type="text" id="a-email" placeholder="name@example.com">
+        <input type="text" id="a-email">
         <label for="a-role">Role</label>
         <select id="a-role">
           <option>User</option>
@@ -305,26 +307,38 @@
       <div>
         <span class="eyebrow">About</span>
         <h2>About KUBLI</h2>
-        <p>Community-reported, risk-classified tree hazard data — routed straight into the DENR permitting process.</p>
+        <p>Community-reported tree hazard data routed into the DENR permitting process.</p>
       </div>
     </div>
 
     <div class="card">
       <h3>How it works</h3>
       <p style="font-size:0.88rem;color:var(--ink);line-height:1.6;">
-        Citizens photograph and pin a hazardous tree from the field. KUBLI instantly
-        classifies the risk level from the conditions observed and the surrounding
-        context (a crack near a school scores higher than the same crack in an open
-        field). Field officers work the queue by risk, validate in person, and assign
-        a permit scope. Admin oversees the whole pipeline — the reports log and the
-        permit queue — without acting as either a citizen or a field officer.
+        Citizens photograph and pin a hazardous tree from the field. KUBLI
+        classifies the reported conditions and surrounding context, then routes
+        the report for field validation and permit processing. Admin oversees
+        the reporting and permit workflow.
       </p>
     </div>
   </section>
 
 </main>
 
-<footer>KUBLI prototype — in-session data only, for demonstration of the reporting → risk classification → permit routing workflow. </footer>
+<div class="report-modal" id="report-modal" hidden>
+  <div class="report-modal-backdrop" data-close-report></div>
+  <div class="report-modal-card" role="dialog" aria-modal="true" aria-labelledby="report-modal-title">
+    <div class="report-modal-head">
+      <div>
+        <span class="eyebrow">Report details</span>
+        <h2 id="report-modal-title">Report</h2>
+      </div>
+      <button class="btn btn-outline btn-sm" id="report-modal-close" type="button">Close</button>
+    </div>
+    <div id="report-modal-body"></div>
+  </div>
+</div>
+
+<footer>KUBLI prototype — in-session data only.</footer>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
