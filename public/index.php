@@ -160,9 +160,11 @@
         <textarea id="u-desc"></textarea>
 
         <div class="field-row">
-          <div>
+          <div class="species-field">
             <label for="u-species">Tree / species</label>
-            <input type="text" id="u-species">
+            <input type="text" id="u-species" autocomplete="off" placeholder="Search common tree name..." aria-autocomplete="list" aria-controls="u-species-results" aria-expanded="false">
+            <div class="species-results" id="u-species-results" role="listbox" hidden></div>
+            <p class="hint" id="u-species-status">Search by a common tree name.</p>
           </div>
           <div>
             <label for="u-context">Location context</label>
