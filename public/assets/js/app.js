@@ -29,6 +29,97 @@ async function apiPostForm(path, formData){
   return data;
 }
 
+/* ---------------- TREE / SPECIES SEARCH ---------------- */
+let speciesSearchTimer = null;
+let speciesRequestToken = 0;
+
+function setSpeciesStatus(msg){
+  const el = document.getElementById('u-species-status');
+  if(el) el.textContent = msg;
+}
+
+function closeSpeciesResults(){
+  const input = document.getElementById('u-species');
+  const results = document.getElementById('u-species-results');
+  if(!results) return;
+  results.hidden = true;
+  if(input) input.setAttribute('aria-expanded','false');
+}
+
+function escapeHTML(value){
+  return String(value ?? '').replace(/[&<>'"]/g, ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','\'':'&#39;','"':'&quot;'}[ch]));
+}
+
+function renderSpeciesResults(items){
+  const input = document.getElementById('u-species');
+  const results = document.getElementById('u-species-results');
+  if(!results) return;
+  if(!items.length){
+    results.innerHTML = '<div class="species-empty">No matching tree names found. You can enter the name manually.</div>';
+    results.hidden = false;
+    input?.setAttribute('aria-expanded','true');
+    return;
+  }
+  results.innerHTML = items.map((item,i)=>`<button type="button" class="species-option" data-index="${i}" role="option"><span class="species-thumb">${item.image_url ? `<img src="${escapeHTML(item.image_url)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : '<span class="species-thumb-empty">No image</span>'}</span><span class="species-copy"><span class="species-name">${escapeHTML(item.common_name || 'Unknown tree')}</span><span class="species-scientific">${escapeHTML(item.scientific_name || '')}</span></span></button>`).join('');
+  results.hidden = false;
+  input?.setAttribute('aria-expanded','true');
+  results.querySelectorAll('.species-option').forEach(btn=>btn.addEventListener('click',()=>{
+    const item = items[Number(btn.dataset.index)];
+    if(!item) return;
+    input.value = item.common_name || item.scientific_name || '';
+    closeSpeciesResults();
+    setSpeciesStatus(item.scientific_name ? `${item.common_name} selected.` : 'Tree name selected.');
+  }));
+  results.querySelectorAll('img').forEach(img=>img.addEventListener('error',()=>{
+    const wrap = img.parentElement;
+    if(wrap) wrap.innerHTML = '<span class="species-thumb-empty">No image</span>';
+  }));
+}
+
+async function searchSpecies(query){
+  const token = ++speciesRequestToken;
+  try{
+    const data = await apiGet(`tree_species.php?q=${encodeURIComponent(query)}`);
+    if(token !== speciesRequestToken) return;
+    const results = Array.isArray(data.results) ? data.results : [];
+    renderSpeciesResults(results);
+    setSpeciesStatus(results.length ? 'Select a tree to use its common name.' : 'No matching tree names found.');
+  }catch(err){
+    if(token !== speciesRequestToken) return;
+    closeSpeciesResults();
+    setSpeciesStatus('Tree search unavailable — you can enter the name manually.');
+  }
+}
+
+function initSpeciesSearch(){
+  const input = document.getElementById('u-species');
+  const results = document.getElementById('u-species-results');
+  if(!input || !results) return;
+  input.addEventListener('input',()=>{
+    clearTimeout(speciesSearchTimer);
+    const query = input.value.trim();
+    if(query.length < 2){
+      closeSpeciesResults();
+      setSpeciesStatus('Type at least 2 characters to search.');
+      return;
+    }
+    setSpeciesStatus('Searching tree names…');
+    speciesSearchTimer = setTimeout(()=>searchSpecies(query),300);
+  });
+  input.addEventListener('focus',()=>{
+    if(input.value.trim().length >= 2) searchSpecies(input.value.trim());
+  });
+  input.addEventListener('keydown',e=>{
+    if(e.key === 'Escape') closeSpeciesResults();
+  });
+  document.addEventListener('click',e=>{
+    if(!input.closest('.species-field')?.contains(e.target)) closeSpeciesResults();
+  });
+  setSpeciesStatus('Search by a common tree name.');
+}
+
+initSpeciesSearch();
+
 /* ---------------- STATE ---------------- */
 const LEVEL_INFO = {
   1:{label:"Low", color:"lvl1", action:"Logged for monitoring — no urgent routing.", sla:"Periodic monitoring"},
@@ -48,8 +139,8 @@ const ROLE_TABS = {
   Admin: ['dashboard','reportslog','manager','admin','about']
 };
 
-let currentUser = null;
-let reports = [];
+let currentUser = null; // { id, name, email, role }
+let reports = [];       // populated from the PHP API on login / refresh
 let authMode = "signin";
 
 /* ---------------- AUTH MODE (sign in vs create account) ---------------- */
@@ -135,6 +226,7 @@ document.getElementById('li-submit').addEventListener('click', async ()=>{
       return;
     }
 
+    // sign in
     const { profile } = await apiPostJSON('signin.php', { email, password: pass });
     await enterAppFromProfile(profile);
 
@@ -151,16 +243,17 @@ document.getElementById('logout-btn').addEventListener('click', async ()=>{
   exitApp();
 });
 
-/* Restore an existing session on page load */
+// Restore an existing session on page load (refresh-safe login)
 (async ()=>{
   try{
     const { profile } = await apiGet('session.php');
     if(profile) await enterAppFromProfile(profile);
   }catch(err){
+    // No session yet, or the server isn't reachable — stay on the login screen.
   }
 })();
 
-/* ---------------- ROLE SWITCHING ---------------- */
+/* ---------------- ROLE SWITCHING (tab nav, post-login) ---------------- */
 document.querySelectorAll('nav.roles button').forEach(btn=>{
   btn.addEventListener('click', ()=>{
     document.querySelectorAll('nav.roles button').forEach(b=>b.classList.remove('active'));
@@ -186,12 +279,14 @@ function classify(symptoms, context){
   });
   let level = base;
 
+  // Sidewalk / pathway consequence multiplier (Section 3.6)
   if(context === "Sidewalk/Pathway" && (symptoms.includes("root_heaving") || symptoms.includes("cavities"))){
     level = Math.max(level, 3);
   } else if(context === "Sidewalk/Pathway" && level < 2 && symptoms.length){
-    level = Math.max(level, 2);
+    level = Math.max(level, 2); // elevated foot-traffic consequence score
   }
 
+  // School / Hospital auto-flag: +1 tier regardless of score (Section 3.4)
   if(context === "School Zone" || context === "Hospital Zone"){
     level = Math.min(level + 1, 4);
   }
@@ -212,26 +307,22 @@ function updatePreview(){
   if(level > base) flagNote = ` <span style="color:var(--ink-soft);">(raised from L${base} — ${context})</span>`;
   out.innerHTML = `<span class="lvl-tag ${info.color}">L${level}</span>${info.label}${flagNote}`;
 }
-
 document.querySelectorAll('.check-row input, #u-context').forEach(el=>el.addEventListener('change', updatePreview));
 
-/* ---------------- CITIZEN: SELECT ALL CONDITIONS ---------------- */
 const allConditions = document.getElementById('u-all-conditions');
 const conditionInputs = [...document.querySelectorAll('.check-row input[data-lvl]')];
-
 allConditions?.addEventListener('change', ()=>{
   conditionInputs.forEach(i=>i.checked=allConditions.checked);
   updatePreview();
 });
-
 conditionInputs.forEach(i=>i.addEventListener('change', ()=>{
   if(allConditions) allConditions.checked = conditionInputs.length > 0 && conditionInputs.every(i=>i.checked);
 }));
 
 /* ---------------- CAMERA ---------------- */
 let camStream = null;
-let capturedPhoto = null;
-let capturedPhotoUrl = null;
+let capturedPhoto = null;     // Blob or File, uploaded to the PHP backend on submit
+let capturedPhotoUrl = null;  // local object URL, just for the <img> preview
 let aiRequestToken = 0;
 
 function setCamStatus(msg){
@@ -280,6 +371,8 @@ async function startCamera(){
     setCamStatus("Camera not supported — use Upload");
     return;
   }
+  // The browser's own permission prompt appears here — the user chooses
+  // Allow or Block, no extra "Open camera" button needed.
   setCamStatus("Requesting camera access…");
   try{
     camStream = await navigator.mediaDevices.getUserMedia({
@@ -311,7 +404,7 @@ function flashCapture(){
   const flash = document.getElementById("cam-flash");
   if(!flash) return;
   flash.classList.remove("flash-active");
-  void flash.offsetWidth;
+  void flash.offsetWidth; // restart the animation if fired twice quickly
   flash.classList.add("flash-active");
 }
 
@@ -328,6 +421,8 @@ function capturePhoto(){
     if(capturedPhotoUrl) URL.revokeObjectURL(capturedPhotoUrl);
     capturedPhoto = blob;
     capturedPhotoUrl = URL.createObjectURL(blob);
+    // Freeze on the captured frame: swap the live video out for the still
+    // image so it's unmistakable the shot was taken.
     preview.src = capturedPhotoUrl;
     preview.hidden = false;
     video.hidden = true;
@@ -349,7 +444,6 @@ function retakePhoto(){
 
 document.getElementById("cam-capture").addEventListener("click", capturePhoto);
 document.getElementById("cam-retake").addEventListener("click", retakePhoto);
-
 document.getElementById("cam-file").addEventListener("change", e=>{
   const file = e.target.files && e.target.files[0];
   if(!file) return;
@@ -366,8 +460,8 @@ document.getElementById("cam-file").addEventListener("change", e=>{
   generateImageDescription(file);
 });
 
-/* ---------------- GEOLOCATION ---------------- */
-const DEFAULT_CENTER = [8.3667, 124.8667];
+/* ---------------- GEOLOCATION (GPS + digital map picker) ---------------- */
+const DEFAULT_CENTER = [8.3667, 124.8667]; // Manolo Fortich, Bukidnon — fallback map center
 let locationMap = null;
 let locationMarker = null;
 let pickedLat = null;
@@ -390,6 +484,8 @@ function resetLocationPicker(){
   }
 }
 
+// Lazily initialize the map the first time the Citizen Reporter tab is opened —
+// Leaflet needs the container to actually be visible/sized to render correctly.
 function ensureLocationMap(){
   if(locationMap){ setTimeout(()=>locationMap.invalidateSize(), 0); return; }
   if(typeof L === 'undefined'){
@@ -568,6 +664,7 @@ function renderDashboard(){
     <div class="stat-box"><div class="num" style="color:var(--canopy);">${resolved}</div><div class="lbl">Resolved</div></div>
   `;
 
+  // --- donut chart (risk distribution) ---
   const donut = document.getElementById('dash-donut');
   const r = 52, c = 2*Math.PI*r;
   let offset = 0;
@@ -575,7 +672,8 @@ function renderDashboard(){
   [4,3,2,1].forEach(lvl=>{
     const frac = total ? counts[lvl]/total : 0;
     const len = frac * c;
-    segments += `<circle cx="70" cy="70" r="${r}" fill="none" stroke="${LEVEL_COLOR[lvl]}" stroke-width="18" stroke-dasharray="${len} ${c-len}" stroke-dashoffset="${-offset}" transform="rotate(-90 70 70)"/>`;
+    segments += `<circle cx="70" cy="70" r="${r}" fill="none" stroke="${LEVEL_COLOR[lvl]}" stroke-width="18"
+      stroke-dasharray="${len} ${c-len}" stroke-dashoffset="${-offset}" transform="rotate(-90 70 70)"/>`;
     offset += len;
   });
   const svg = total ? `
@@ -594,6 +692,7 @@ function renderDashboard(){
 
   donut.innerHTML = `${svg}<div class="donut-legend">${legend}</div>`;
 
+  // --- status breakdown bars ---
   const statuses = ["Pending Review","Field Validation","Permit Routed","Resolved"];
   const statusCounts = statuses.map(s=>reports.filter(r=>r.status===s).length);
   const maxStatus = Math.max(1, ...statusCounts);
@@ -603,6 +702,7 @@ function renderDashboard(){
       <div class="bar-track"><div class="bar-fill" style="width:${(statusCounts[i]/maxStatus*100)}%;background:var(--canopy);"></div></div>
     </div>`).join("");
 
+  // --- location context bars ---
   const contexts = [...new Set(reports.map(r=>r.context))];
   const ctxCounts = contexts.map(c=>reports.filter(r=>r.context===c).length);
   const maxCtx = Math.max(1, ...ctxCounts);
@@ -612,6 +712,7 @@ function renderDashboard(){
       <div class="bar-track"><div class="bar-fill" style="width:${(ctxCounts[i]/maxCtx*100)}%;background:var(--bark);"></div></div>
     </div>`).join("") : `<div class="empty">No reports yet.</div>`;
 
+  // --- recent activity ---
   const recent = [...reports].slice(0,1);
   document.getElementById('dash-recent').innerHTML = recent.length
     ? recent.map(r=>tagCard(r)).join("")
@@ -678,7 +779,6 @@ function renderManagerList(){
     container.innerHTML = `<div class="empty">No reports match this filter.</div>`;
     return;
   }
-
   container.innerHTML = list.map(r=>{
     const info = LEVEL_INFO[r.level];
     const isFast = r.context === "School Zone" || r.context === "Hospital Zone";
@@ -718,7 +818,7 @@ function renderManagerList(){
       const rpt = reports.find(x=>x.id===e.target.dataset.id);
       if(!rpt) return;
       const prev = rpt.status;
-      rpt.status = e.target.value;
+      rpt.status = e.target.value; // optimistic
       try{
         await apiPostJSON('report_update.php', { id: rpt.dbId, status: e.target.value });
       }catch(err){
@@ -729,13 +829,12 @@ function renderManagerList(){
       renderDashboard();
     });
   });
-
   container.querySelectorAll('.mgr-scope').forEach(sel=>{
     sel.addEventListener('change', async e=>{
       const rpt = reports.find(x=>x.id===e.target.dataset.id);
       if(!rpt) return;
       const prev = rpt.scope;
-      rpt.scope = e.target.value || null;
+      rpt.scope = e.target.value || null; // optimistic
       try{
         await apiPostJSON('report_update.php', { id: rpt.dbId, scope: rpt.scope });
       }catch(err){
@@ -748,25 +847,17 @@ function renderManagerList(){
   });
 }
 
-/* ---------------- MANAGER: PRINT PDF ---------------- */
 function printManagerPDF(){
   const fLevel = document.getElementById('f-level').value;
   const fStatus = document.getElementById('f-status').value;
   let list = [...reports].sort((a,b)=>b.level-a.level);
-
   if(fLevel!=='all') list = list.filter(r=>String(r.level)===fLevel);
   if(fStatus!=='all') list = list.filter(r=>r.status===fStatus);
 
   const rows = list.map(r=>`<tr><td>${r.id}</td><td>${r.createdAt || r.ts}</td><td>${r.species}</td><td>${r.context}</td><td>${r.coords}</td><td>L${r.level} - ${LEVEL_INFO[r.level].label}</td><td>${r.status}</td><td>${r.scope || '—'}</td><td>${r.desc}</td></tr>`).join('');
-
   const printWindow = window.open('', '_blank', 'width=1200,height=800');
-  if(!printWindow){
-    alert('Please allow pop-ups to print the report.');
-    return;
-  }
-
-  printWindow.document.write(`<!DOCTYPE html><html><head><title>KUBLI Report Queue</title><style>body{font-family:Arial,sans-serif;color:#16281F;padding:28px;font-size:12px}h1{margin:0 0 4px}p{margin:4px 0 18px;color:#555}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ccc;padding:7px;text-align:left;vertical-align:top}th{background:#eee}@media print{body{padding:0}}</style></head><body><h1>KUBLI — Report Queue &amp; Permit Routing</h1><p>Risk filter: ${fLevel==='all'?'All risk levels':`Level ${fLevel}`} · Status filter: ${fStatus==='all'?'All statuses':fStatus} · Generated: ${new Date().toLocaleString()}</p><table><thead><tr><th>Report ID</th><th>Timestamp</th><th>Tree / species</th><th>Location</th><th>Coordinates</th><th>Risk</th><th>Status</th><th>Permit scope</th><th>Description</th></tr></thead><tbody>${rows || '<tr><td colspan="9">No reports match the selected filters.</td></tr>'}</tbody></table></body></html>`);
-
+  if(!printWindow){ alert('Please allow pop-ups to print the report.'); return; }
+  printWindow.document.write(`<!DOCTYPE html><html><head><title>KUBLI Report Queue</title><style>body{font-family:Arial,sans-serif;color:#16281F;padding:28px;font-size:12px}h1{margin:0 0 4px}p{margin:4px 0 18px;color:#555}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ccc;padding:7px;text-align:left;vertical-align:top}th{background:#eee} @media print{body{padding:0}}</style></head><body><h1>KUBLI — Report Queue &amp; Permit Routing</h1><p>Risk filter: ${fLevel==='all'?'All risk levels':`Level ${fLevel}`} · Status filter: ${fStatus==='all'?'All statuses':fStatus} · Generated: ${new Date().toLocaleString()}</p><table><thead><tr><th>Report ID</th><th>Timestamp</th><th>Tree / species</th><th>Location</th><th>Coordinates</th><th>Risk</th><th>Status</th><th>Permit scope</th><th>Description</th></tr></thead><tbody>${rows || '<tr><td colspan="9">No reports match the selected filters.</td></tr>'}</tbody></table></body></html>`);
   printWindow.document.close();
   printWindow.focus();
   setTimeout(()=>{printWindow.print();},250);
@@ -813,7 +904,6 @@ async function renderAdmin(){
       renderAdmin();
     });
   });
-
   tbody.querySelectorAll('.a-toggle-status').forEach(btn=>{
     btn.addEventListener('click', async e=>{
       const id = Number(e.target.dataset.id);
@@ -828,15 +918,11 @@ async function renderAdmin(){
   });
 }
 
-/* ---------------- RENDER: REPORTS LOG ---------------- */
+/* ---------------- RENDER: REPORTS LOG (Admin oversight) ---------------- */
 function renderReportsLog(){
   const tbody = document.getElementById('log-table');
   if(!tbody) return;
-
-  const list = [...reports].sort((a,b)=>
-    new Date((b.createdAt||'').replace(' ','T')) -
-    new Date((a.createdAt||'').replace(' ','T'))
-  );
+  const list = [...reports].sort((a,b)=> new Date((b.createdAt||'').replace(' ','T')) - new Date((a.createdAt||'').replace(' ','T')));
 
   if(!list.length){
     tbody.innerHTML = `<tr><td colspan="5" class="hint">No reports yet.</td></tr>`;
@@ -852,39 +938,29 @@ function renderReportsLog(){
       <td><button class="btn btn-outline btn-sm log-view" data-id="${r.id}">View</button></td>
     </tr>`).join("");
 
-  tbody.querySelectorAll('.log-view').forEach(btn=>
-    btn.addEventListener('click', ()=>openReportModal(btn.dataset.id))
-  );
+  tbody.querySelectorAll('.log-view').forEach(btn=>btn.addEventListener('click', ()=>openReportModal(btn.dataset.id)));
 }
 
-/* ---------------- ADMIN: REPORT VIEW ---------------- */
 function openReportModal(id){
   const rpt = reports.find(r=>r.id===id);
   if(!rpt) return;
-
   const info = LEVEL_INFO[rpt.level];
   const symptoms = (rpt.symptoms || []).map(s=>{
     const box = document.querySelector(`.check-row input[value="${s}"]`);
     return box?.parentElement?.querySelector('span:last-child')?.textContent?.trim() || s;
   });
-
   const body = document.getElementById('report-modal-body');
-  if(!body) return;
-
   body.innerHTML = `<div class="report-detail-grid"><div><span class="detail-label">Report ID</span><b>${rpt.id}</b></div><div><span class="detail-label">Submitted</span><b>${rpt.createdAt || rpt.ts}</b></div><div><span class="detail-label">Tree / species</span><b>${rpt.species}</b></div><div><span class="detail-label">Risk level</span><b><span class="lvl-tag ${info.color}">L${rpt.level}</span> ${info.label}</b></div><div><span class="detail-label">Location</span><b>${rpt.context}</b></div><div><span class="detail-label">Status</span><b>${rpt.status}</b></div><div><span class="detail-label">Coordinates</span><b>${rpt.coords || '—'}</b></div><div><span class="detail-label">Permit scope</span><b>${rpt.scope || '— not yet classified —'}</b></div></div>${rpt.photo ? `<img class="report-detail-photo" src="${rpt.photo}" alt="Evidence photo for ${rpt.id}">` : ''}<div class="report-detail-section"><span class="detail-label">Description</span><p>${rpt.desc || '—'}</p></div><div class="report-detail-section"><span class="detail-label">Observed conditions</span><p>${symptoms.length ? symptoms.join(', ') : '—'}</p></div>${(rpt.lat!=null && rpt.lng!=null) ? `<a class="text-link" href="https://www.google.com/maps?q=${rpt.lat},${rpt.lng}" target="_blank" rel="noopener">View location on map ↗</a>` : ''}`;
-
   document.getElementById('report-modal').hidden=false;
 }
 
 function closeReportModal(){
-  const modal = document.getElementById('report-modal');
-  if(modal) modal.hidden=true;
+  document.getElementById('report-modal').hidden=true;
 }
 
 document.getElementById('report-modal-close')?.addEventListener('click', closeReportModal);
 document.querySelector('[data-close-report]')?.addEventListener('click', closeReportModal);
 
-/* ---------------- ADMIN: EXPORT CSV ---------------- */
 function exportReportsCSV(){
   const header = ["Timestamp","Risk Level","Location","Status"];
   const rows = reports.map(r => [
@@ -893,7 +969,6 @@ function exportReportsCSV(){
     r.context,
     r.status
   ]);
-
   const csv = [header, ...rows]
     .map(row => row.map(cell => `"${String(cell).replace(/"/g,'""')}"`).join(","))
     .join("\r\n");
@@ -925,18 +1000,13 @@ document.getElementById('a-add').addEventListener('click', async ()=>{
   const btn = document.getElementById('a-add');
   btn.disabled = true;
   btn.textContent = 'Creating…';
-
   try{
     const { temp_password } = await apiPostJSON('user_create.php', { name, email, role });
     nameEl.value = '';
     emailEl.value = '';
     roleEl.value = 'User';
     await renderAdmin();
-    alert(`Account created for ${name}.
-
-Temporary password: ${temp_password}
-
-Share this with them securely — they should sign in and it's up to them whether to keep it (there's no in-app password change yet).`);
+    alert(`Account created for ${name}.\n\nTemporary password: ${temp_password}\n\nShare this with them securely — they should sign in and it's up to them whether to keep it (there's no in-app password change yet).`);
   }catch(err){
     alert('Could not create account: ' + err.message);
   }finally{
